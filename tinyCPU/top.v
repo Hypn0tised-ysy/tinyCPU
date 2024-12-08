@@ -28,9 +28,11 @@ module top(
     output [7:0] disp_seg_o, // 输出到7段显示器的信号
     output [7:0] disp_an_o  // 选择信号
     );
+
     //clk
     reg [31:0] clk_cnt;
     wire Clk_CPU;
+
     //24分频
     parameter div_num=24;
     wire clk_div_24;
@@ -40,12 +42,13 @@ module top(
         else
             clk_cnt <= clk_cnt + 1'b1;
     end
+
     assign Clk_CPU=(sw_i[15])?clk_cnt[27]:clk_cnt[25];//15号开关控制分频，开关置1为低频
     assign clk_div_24=clk_cnt[div_num];
     reg [63:0]display_data;
     reg [63:0] LED_DATA[18:0];
     wire [63:0] fixed_data = 64'b0000_0000_0000_0000_0111_0110_0101_0100_0011_0010_0001_0000;
-    //初始赋值
+
 initial begin
   LED_DATA[0] = 64'hFF_FF_FF_FE_FE_FE_FE_FE;
   LED_DATA[1] = 64'hFF_FE_FE_FE_FE_FE_FF_FF;    
@@ -64,17 +67,21 @@ initial begin
   LED_DATA[14] = 64'hFF_FF_FF_FF_F9_F8_FF_FF;
   LED_DATA[15] = 64'hFF_FF_FF_FF_FF_F8_F3_FF;
  end 
+
     reg [5:0] led_data_addr=5'b0;
     reg [63:0] led_disp_data;
     parameter DATA_NUM=16;
+
    // 产生LED_DATA
 reg [5:0] rom_addr; // 6-bit ROM address
+
 always @(posedge Clk_CPU or negedge rstn) begin
     if (!rstn)
         rom_addr <= 6'd0;
     else
         rom_addr <= rom_addr + 1'b1; // Increment address to fetch next instruction
 end
+
 always @(posedge Clk_CPU or negedge rstn) begin
     if (!rstn) begin
         led_data_addr <= 6'd0;
@@ -112,13 +119,49 @@ always @(sw_i) begin
     end
 end
 
+//register file
+wire RegisterFileWrite=sw_i[3];
+wire[31:0]WriteData={28'b0,sw_i[7:4]};
+wire[4:0]rd=sw_i[11:8];
+wire[4:0]rs1=5'b0;//to be modified
+wire[4:0]rs2=5'b0;//to be modified
+reg [4:0]reg_address=5'b0;
+
+//register_data
+always@ (posedge Clk_CPU or negedge rstn) begin
+    if(!rstn) begin
+        reg_address<=5'b0;
+        reg_data<=32'b0;
+    end
+    else if(sw_i[13]==1'b1)begin
+        reg_address<=reg_address+1'b1;
+        reg_data<=myRegisterFile.register[reg_address];
+    end
+end
+
     // ROM例化
     dist_mem_im U_IM (
     .a(rom_addr),  // ROM地址输入
     .spo(instr)    // ROM输出的新指令
 );
+
+RegisterFile myRegisterFile(
+    .clk(Clk_CPU),
+    .reset(rstn),
+    .RegisterFileWrite(RegisterFileWrite),
+    .sw_i(sw_i),
+    .rs1(rs1),
+    .rs2(rs2),
+    .rd(rd),
+    .WriteData(WriteData),
+    .rs1_data(rs1_data),
+    .rs2_data(rs2_data)
+);
     seg7x16 greedy_snake(.clk(clk),.rstn(rstn),.display_mode(sw_i[0]),.i_data(display_data),.o_seg(disp_seg_o),.o_sel(disp_an_o)); //0号开关控制显示模式
-    RegisterFile myRegisterFile(.clk(Clk_CPU),.reset(rstn),.RegisterFileWrite(sw_i[3]))
+
 endmodule
+
+
+
 
 
