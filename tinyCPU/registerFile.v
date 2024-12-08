@@ -41,7 +41,12 @@ always@(posedge clk or negedge reset) begin
     end
     end
     else if(RegisterFileWrite&&(!sw_i[1])) begin//normal mode
+    if(WriteData[31]==1'b0)begin
         register[rd]<=WriteData;
+    end
+    else begin
+        register[rd]<={1'b1,~(WriteData[30:0])+1'b1};
+    end
     end 
     rs1_data <= (rs1 == 5'b0) ? 32'b0 : register[rs1];
     rs2_data <= (rs2 == 5'b0) ? 32'b0 : register[rs2];

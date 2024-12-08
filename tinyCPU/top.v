@@ -120,12 +120,15 @@ always @(sw_i) begin
 end
 
 //register file
-wire RegisterFileWrite=sw_i[3];
-wire[31:0]WriteData={28'b0,sw_i[7:4]};
-wire[4:0]rd=sw_i[11:8];
+wire RegisterFileWrite=sw_i[2];
+wire[31:0]WriteData={sw_i[8],28'b0,sw_i[7:5]};//原码表示，register中存储补码，方便人类操作
+wire[4:0]rd=sw_i[10:9];//牺牲一位寄存器选择来作为writeData的符号位
 wire[4:0]rs1=5'b0;//to be modified
 wire[4:0]rs2=5'b0;//to be modified
 reg [4:0]reg_address=5'b0;
+assign RegisterFileWrite=sw_i[2];
+assign WriteData={sw_i[8],28'b0,sw_i[7:5]};//sw_i[8]作为符号位，和文档不一样，注意
+assign rd=sw_i[10:9];
 
 //register_data
 always@ (posedge Clk_CPU or negedge rstn) begin
@@ -138,6 +141,29 @@ always@ (posedge Clk_CPU or negedge rstn) begin
         reg_data<=myRegisterFile.register[reg_address];
     end
 end
+
+//alu
+wire [31:0] operandA,operandB;
+wire [4:0] ALUOp={3'b0,sw_i[4:3]};
+reg [2:0] alu_address=3'b0;
+assign operandA=myRegisterFile.register[sw_i[10:8]];
+assign operandB=myRegisterFile.register[sw_i[7:5]];
+
+always@(posedge Clk_CPU or negedge rstn) begin
+    if(!rstn)
+        alu_address<=3'b0;
+    begin 
+        alu_address<=alu_address+1'b1;
+        case(alu_address)
+        3'b001:alu_disp_data=myAlu.operandA;
+        3'b010:alu_disp_data=myAlu.operandB;
+        3'b011:alu_disp_data=myAlu.result;
+        3'b100:alu_disp_data=Zero;
+        default:alu_disp_data=32'hFFFFFFFF;
+        endcase
+    end
+end
+
 
     // ROM例化
     dist_mem_im U_IM (
@@ -157,9 +183,17 @@ RegisterFile myRegisterFile(
     .rs1_data(rs1_data),
     .rs2_data(rs2_data)
 );
+alu myAlu(
+    .operandA(operandA),
+    .operandB(operandB),
+    .ALUOp(ALUOp),
+    .result(aluOutput),
+    .Zero(Zero)
+);
     seg7x16 greedy_snake(.clk(clk),.rstn(rstn),.display_mode(sw_i[0]),.i_data(display_data),.o_seg(disp_seg_o),.o_sel(disp_an_o)); //0号开关控制显示模式
 
 endmodule
+
 
 
 
