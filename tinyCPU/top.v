@@ -164,6 +164,33 @@ always@(posedge Clk_CPU or negedge rstn) begin
     end
 end
 
+//data memory
+reg [31:0]display_memory_address;
+wire [2:0]memory_address;
+wire [31:0]dataMemory_dataIn;
+wire [31:0]dataMemory_dataOut;
+wire [1:0]dataMemoryType;
+parameter DM_DATA_NUM=16;
+
+assign memory_address=sw_i[10:8];
+assign dataMemory_dataIn=sw_i[7:5];
+assign dataMemoryType=sw_i[4:3];
+
+always@(posedge Clk_CPU or negedge rstn) begin
+    if(!rstn)begin
+        display_memory_address=6'b0;
+        dmem_data=32'hFFFFFFFF;
+    end
+    if(sw_i[11]==1'b1)begin
+        display_memory_address=display_memory_address+1'b1;
+        dmem_data=myDataMemory.data[display_memory_address][7:0];
+        dmem_data={display_memory_address,dmem_data[27:0]};
+        if(display_memory_address==DM_DATA_NUM)begin   
+            display_memory_address=6'b0;
+            dmem_data=32'hFFFFFFFF;
+        end
+    end
+end
 
     // ROM例化
     dist_mem_im U_IM (
@@ -190,9 +217,19 @@ alu myAlu(
     .result(aluOutput),
     .Zero(Zero)
 );
+dataMemory myDataMemory(
+    .clk(Clk_CPU),
+    .dataMemoryWrite(sw_i[2]&&!sw_i[1]),
+    .address({3'b0,memory_address[2:0]}),
+    .dataIn(dataMemory_dataIn),
+    .dataMemoryType(dataMemoryType[1:0]),
+    .dataOut(dataMemory_dataOut)
+);
     seg7x16 greedy_snake(.clk(clk),.rstn(rstn),.display_mode(sw_i[0]),.i_data(display_data),.o_seg(disp_seg_o),.o_sel(disp_an_o)); //0号开关控制显示模式
 
 endmodule
+
+
 
 
 
