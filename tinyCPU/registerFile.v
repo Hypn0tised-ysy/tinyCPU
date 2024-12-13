@@ -43,6 +43,11 @@ always@(posedge clk or negedge reset) begin
     else if(RegisterFileWrite) begin
         register[rd]<=WriteData;
     end
+
+end
+
+always@(negedge clk)
+begin
     rs1_data <= (rs1 == 5'b0) ? 32'b0 : register[rs1];
     rs2_data <= (rs2 == 5'b0) ? 32'b0 : register[rs2];
 end

@@ -150,13 +150,18 @@ wire Zero;
 wire [31:0]dataMemory_dataOut;
 
 assign led_o[0]=writeDataSelection;
-assign led_o[1]=regWrite;
-assign led_o[2]=memWrite;
-assign led_o[3]=dataMemoryType[0];
-assign led_o[4]=dataMemoryType[1];
-assign led_o[5]=dataMemoryType[2];
-assign led_o[6]=rs2[0];
-assign led_o[7]=rs2[1];
+assign led_o[1]=memWrite;
+assign led_o[2]=aluOutput[0];
+assign led_o[3]=aluOutput[1];
+assign led_o[4]=aluOutput[2];
+assign led_o[5]=rs2[0];
+assign led_o[6]=rs2[1];
+assign led_o[7]=rs2_data[0];
+assign led_o[8]=rs2_data[1];
+assign led_o[9]=rs2_data[2];
+assign led_o[10]=rs2_data[3];
+assign led_o[11]=rs2_data[4];
+assign led_o[12]=rs2_data[5];
 assign led_o[15]=Clk_CPU;
 
 // ROM例化
