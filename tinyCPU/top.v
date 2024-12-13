@@ -25,17 +25,28 @@ module top(
     input clk,         // Clock input
     input rstn,        // Reset input
     input [15:0] sw_i, 
+    input BTNC,
+    input BTNU,
     output [7:0] disp_seg_o, // 输出到7段显示器的信号
-    output [7:0] disp_an_o  // 选择信号
+    output [7:0] disp_an_o,  // 选择信号
+    output [15:0] led_o
     );
 
     //clk
     reg [31:0] clk_cnt;
+    reg [31:0] cpu_clk_cnt;
     wire Clk_CPU;
 
     //24分频
     parameter div_num=24;
     wire clk_div_24;
+    wire clk_div_25;
+        always @(posedge clk or negedge rstn) begin
+        if (!rstn)
+            cpu_clk_cnt <= 32'b0;
+        else if(~sw_i[1])
+            cpu_clk_cnt <= clk_cnt + 1'b1;
+    end
         always @(posedge clk or negedge rstn) begin
         if (!rstn)
             clk_cnt <= 32'b0;
@@ -43,8 +54,9 @@ module top(
             clk_cnt <= clk_cnt + 1'b1;
     end
 
-    assign Clk_CPU=(sw_i[15])?clk_cnt[27]:clk_cnt[25];//15号开关控制分频，开关置1为低频
+    assign Clk_CPU=(sw_i[15])?cpu_clk_cnt[27]:cpu_clk_cnt[25];//15号开关控制分频，开关置1为低频
     assign clk_div_24=clk_cnt[div_num];
+    assign clk_div_25=clk_cnt[25];
     reg [63:0]display_data;
     reg [63:0] LED_DATA[18:0];
     wire [63:0] fixed_data = 64'b0000_0000_0000_0000_0111_0110_0101_0100_0011_0010_0001_0000;
@@ -79,10 +91,15 @@ always @(posedge Clk_CPU or negedge rstn) begin
     if (!rstn)
         rom_addr <= 6'd0;
     else
+    if(sw_i[1]==1'b0)begin
         rom_addr <= rom_addr + 1'b1; // Increment address to fetch next instruction
+    end
+    else begin
+        rom_addr<=rom_addr;
+        end
 end
 
-always @(posedge Clk_CPU or negedge rstn) begin
+always @(posedge clk_div_25 or negedge rstn) begin
     if (!rstn) begin
         led_data_addr <= 6'd0;
         led_disp_data <= 64'b1;
@@ -99,20 +116,72 @@ always @(posedge Clk_CPU or negedge rstn) begin
     end
 end
 
-wire [31:0] instr;
+wire [31:0] instruction;
 reg [31:0] reg_data; // regvalue
 reg [31:0] alu_disp_data;
 reg [31:0] dmem_data;
+
+//instruciton
+wire [6:0] op;
+wire [6:0] func7;
+wire [2:0] func3;
+wire [4:0] rs1;
+wire [4:0] rs2;
+wire [4:0] rd;
+wire [11:0]load_immediate;
+wire [11:0]save_immediate;
+
+wire regWrite;
+wire memWrite;
+wire [5:0]EXTOp;
+wire [4:0]ALUOp;
+wire ALUSrc;
+wire [2:0]dataMemoryType;
+wire writeDataSelection;
+
+wire [31:0]immediate;
+
+wire [31:0] rs1_data;
+wire [31:0] rs2_data;
+
+wire signed[31:0] aluOutput;
+wire Zero;
+
+wire [31:0]dataMemory_dataOut;
+
+assign led_o[0]=writeDataSelection;
+assign led_o[1]=regWrite;
+assign led_o[2]=memWrite;
+assign led_o[3]=dataMemoryType[0];
+assign led_o[4]=dataMemoryType[1];
+assign led_o[5]=dataMemoryType[2];
+assign led_o[6]=rs2[0];
+assign led_o[7]=rs2[1];
+assign led_o[15]=Clk_CPU;
+
+// ROM例化
+dist_mem_im U_IM (
+.a(rom_addr), 
+.spo(instruction)   
+);
+
+decode decoder(.instruction(instruction),.op(op),.func7(func7),.func3(func3),.rs1(rs1),.rs2(rs2),.rd(rd),.load_immediate(load_immediate),.save_immediate(save_immediate));
+
+control control_signal(.Op(op),.Funct7(func7),.Funct3(func3),.zero(zero),.regWrite(regWrite),.memWrite(memWrite),.EXTOp(EXTOp),.ALUOp(ALUOp),.ALUSrc(ALUSrc),.dataMemoryType(dataMemoryType),.writeDataSelection(writeDataSelection));
+
+immediate_generate gen(.i_immediate(instruction[31:20]),.s_immediate({instruction[31:25],instruction[11:7]}),.b_immediate({instruction[31],instruction[7],instruction[30:25],instruction[11:8]}),.EXTOp(EXTOp),.immediate(immediate));
+
+
 
 // choose display source data
 always @(sw_i) begin
     if (sw_i[0] == 0) begin
         case (sw_i[14:11])
-            4'b1000: display_data = instr;       // ROM
+            4'b1000: display_data = instruction;       // ROM
             4'b0100: display_data = reg_data;    // RF
             4'b0010: display_data = alu_disp_data;
             4'b0001: display_data = dmem_data;
-            default: display_data = instr;
+            default: display_data = instruction;
         endcase
     end else begin
         display_data = led_disp_data;
@@ -120,19 +189,27 @@ always @(sw_i) begin
 end
 
 //register file
-wire RegisterFileWrite=sw_i[2];
-wire[31:0]WriteData={sw_i[8],28'b0,sw_i[7:5]};//原码表示，register中存储补码，方便人类操作
-wire[4:0]rd=sw_i[10:9];//牺牲一位寄存器选择来作为writeData的符号位
-wire[4:0]rs1=5'b0;//to be modified
-wire[4:0]rs2=5'b0;//to be modified
+wire[31:0]WriteData;
 reg [4:0]reg_address=5'b0;
-assign RegisterFileWrite=sw_i[2];
-assign WriteData={sw_i[8],28'b0,sw_i[7:5]};//sw_i[8]作为符号位，和文档不一样，注意
-assign rd=sw_i[10:9];
+
+assign WriteData=writeDataSelection?dataMemory_dataOut:aluOutput;
+
+RegisterFile myRegisterFile(
+    .clk(Clk_CPU),
+    .reset(rstn),
+    .RegisterFileWrite(regWrite),
+    .sw_i(sw_i),
+    .rs1(rs1),
+    .rs2(rs2),
+    .rd(rd),
+    .WriteData(WriteData),
+    .rs1_data(rs1_data),
+    .rs2_data(rs2_data)
+);
 
 //register_data
-always@ (posedge Clk_CPU or negedge rstn) begin
-    if(!rstn) begin
+always@ (posedge clk_div_25 or negedge rstn or posedge BTNC) begin
+    if(!rstn | BTNC) begin
         reg_address<=5'b0;
         reg_data<=32'b0;
     end
@@ -144,12 +221,20 @@ end
 
 //alu
 wire [31:0] operandA,operandB;
-wire [4:0] ALUOp={3'b0,sw_i[4:3]};
 reg [2:0] alu_address=3'b0;
-assign operandA=myRegisterFile.register[sw_i[10:8]];
-assign operandB=myRegisterFile.register[sw_i[7:5]];
 
-always@(posedge Clk_CPU or negedge rstn) begin
+        assign operandA=rs1_data;
+        assign operandB=(ALUSrc)?immediate:rs2_data;
+
+alu myAlu(
+    .operandA(operandA),
+    .operandB(operandB),
+    .ALUOp(ALUOp),
+    .result(aluOutput),
+    .Zero(Zero)
+);
+
+always@(posedge clk_div_25 or negedge rstn) begin
     if(!rstn)
         alu_address<=3'b0;
     begin 
@@ -166,23 +251,27 @@ end
 
 //data memory
 reg [31:0]display_memory_address;
-wire [2:0]memory_address;
 wire [31:0]dataMemory_dataIn;
-wire [31:0]dataMemory_dataOut;
-wire [1:0]dataMemoryType;
 parameter DM_DATA_NUM=16;
 
-assign memory_address=sw_i[10:8];
-assign dataMemory_dataIn=sw_i[7:5];
-assign dataMemoryType=sw_i[4:3];
 
-always@(posedge Clk_CPU or negedge rstn) begin
-    if(!rstn)begin
-        display_memory_address=6'b0;
+dataMemory myDataMemory(
+    .clk(Clk_CPU),
+    .rstn(rstn),
+    .dataMemoryWrite(memWrite&~sw_i[1]),
+    .address(aluOutput[5:0]),
+    .dataIn(rs2_data),
+    .dataMemoryType(dataMemoryType),
+    .dataOut(dataMemory_dataOut)
+);
+
+always@(posedge clk_div_25 or negedge rstn or posedge BTNU) begin
+    if(!rstn|BTNU)begin
+        display_memory_address<=6'b0;
         dmem_data=32'hFFFFFFFF;
     end
-    if(sw_i[11]==1'b1)begin
-        display_memory_address=display_memory_address+1'b1;
+    else if(sw_i[11]==1'b1)begin
+        display_memory_address<=display_memory_address+1'b1;
         dmem_data=myDataMemory.data[display_memory_address][7:0];
         dmem_data={display_memory_address,dmem_data[27:0]};
         if(display_memory_address==DM_DATA_NUM)begin   
@@ -192,47 +281,7 @@ always@(posedge Clk_CPU or negedge rstn) begin
     end
 end
 
-    // ROM例化
-    dist_mem_im U_IM (
-    .a(rom_addr),  // ROM地址输入
-    .spo(instr)    // ROM输出的新指令
-);
-
-RegisterFile myRegisterFile(
-    .clk(Clk_CPU),
-    .reset(rstn),
-    .RegisterFileWrite(RegisterFileWrite),
-    .sw_i(sw_i),
-    .rs1(rs1),
-    .rs2(rs2),
-    .rd(rd),
-    .WriteData(WriteData),
-    .rs1_data(rs1_data),
-    .rs2_data(rs2_data)
-);
-alu myAlu(
-    .operandA(operandA),
-    .operandB(operandB),
-    .ALUOp(ALUOp),
-    .result(aluOutput),
-    .Zero(Zero)
-);
-dataMemory myDataMemory(
-    .clk(Clk_CPU),
-    .dataMemoryWrite(sw_i[2]&&!sw_i[1]),
-    .address({3'b0,memory_address[2:0]}),
-    .dataIn(dataMemory_dataIn),
-    .dataMemoryType(dataMemoryType[1:0]),
-    .dataOut(dataMemory_dataOut)
-);
     seg7x16 greedy_snake(.clk(clk),.rstn(rstn),.display_mode(sw_i[0]),.i_data(display_data),.o_seg(disp_seg_o),.o_sel(disp_an_o)); //0号开关控制显示模式
+    
 
 endmodule
-
-
-
-
-
-
-
-

@@ -7,14 +7,9 @@ module alu(
 
 always @(*) begin
     case (ALUOp)
-        5'b00000: begin // 加法
+        5'b00011:  begin // 加法
             result = operandA + operandB;
         end
-        
-        5'b00001: begin // 减法 
-            result = operandA - operandB; // 执行减法操作
-        end
-        
         default: result = 32'b0; // 默认情况下结果为 0
     endcase
 

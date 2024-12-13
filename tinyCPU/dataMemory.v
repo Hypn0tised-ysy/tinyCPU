@@ -27,6 +27,7 @@
 
 module dataMemory    (
     input clk,
+    input rstn,
     input dataMemoryWrite,
     input [5:0] address,
     input [31:0] dataIn,
@@ -35,10 +36,15 @@ module dataMemory    (
 );
 
 reg [7:0]data[31:0];
+integer  ith_register;
 
-always@ (posedge clk)begin
+always@ (posedge clk or negedge rstn)begin
+    if(!rstn)
+    for(ith_register = 0; ith_register < 32; ith_register = ith_register + 1) begin
+        data[ith_register]=8'b0;
+    end
     //write
-    if(dataMemoryWrite)
+    else if(dataMemoryWrite)
     begin
     case(dataMemoryType)
     `DM_BYTE: data[address]<=dataIn[7:0];
@@ -54,8 +60,11 @@ always@ (posedge clk)begin
     end
     endcase
     end
+end
+
 //read,using sign extension
-else begin
+always@(*)
+begin
     case(dataMemoryType)
     `DM_BYTE: begin
     dataOut={{24{data[address][7]}}, data[address][7:0]};
@@ -68,6 +77,6 @@ else begin
     end
     endcase
 end
-end
+
 
 endmodule
